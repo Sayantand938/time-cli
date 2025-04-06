@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+
+// This file acts as the entry point for the OS.
+// It requires the compiled JavaScript output from TypeScript.
+require("../dist/index.js");
