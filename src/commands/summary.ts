@@ -4,7 +4,8 @@ import { Command, Option } from 'commander';
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import { getAllSessions, Session } from '../lib/db';
-import { formatDuration, formatDate, parseFilterString, ParsedFilter } from '../lib/utils';
+// Import the new duration formatter and keep formatDate
+import { formatDurationAsHHMM, formatDate, parseFilterString, ParsedFilter } from '../lib/utils';
 
 interface DailySummary {
     dateStr: string;
@@ -33,25 +34,33 @@ export function registerSummaryCommand(program: Command) {
             const dailySummariesMap = new Map<string, Omit<DailySummary, 'avgSeconds' | 'status'>>();
 
             sessions.forEach((session: Session) => {
+                // Only include completed sessions in summary calculations
+                if (session.end_time === null) {
+                    return; // Skip active sessions for summary
+                }
+
                 const dateStr = formatDate(session.start_time);
                 let summary = dailySummariesMap.get(dateStr);
                 if (!summary) {
                     summary = { dateStr: dateStr, totalSeconds: 0, sessionCount: 0, firstTimestamp: session.start_time };
                     dailySummariesMap.set(dateStr, summary);
                 }
-                if (session.end_time !== null) {
-                    const duration = session.end_time - session.start_time;
-                    if (duration >= 0 && !isNaN(duration)) {
-                        summary.totalSeconds += duration;
-                        summary.sessionCount += 1;
-                    }
+
+                const duration = session.end_time - session.start_time;
+                // Ensure duration is valid before adding
+                if (duration >= 0 && !isNaN(duration)) {
+                    summary.totalSeconds += duration;
+                    summary.sessionCount += 1;
+                } else {
+                     console.warn(chalk.yellow(`Skipping session ${session.id.substring(0,8)} due to invalid duration calculation.`));
                 }
             });
 
             let summariesArray: DailySummary[] = Array.from(dailySummariesMap.values()).map(s => {
                 const avgSeconds = s.sessionCount > 0 ? s.totalSeconds / s.sessionCount : 0;
                 const status = s.totalSeconds >= EIGHT_HOURS_IN_SECONDS ? '✅' : '❌';
-                return { ...s, avgSeconds, status };
+                // Make sure avgSeconds is not NaN before creating the object
+                return { ...s, avgSeconds: isNaN(avgSeconds) ? 0 : avgSeconds, status };
             });
 
             summariesArray.sort((a, b) => b.firstTimestamp - a.firstTimestamp);
@@ -69,6 +78,10 @@ export function registerSummaryCommand(program: Command) {
                             if (parsed.key === 'status' && !['✅', '❌'].includes(parsed.value)) {
                                 console.error(chalk.red(`Invalid value "${parsed.value}" for status filter. Use ✅ or ❌.`));
                                 process.exitCode = 1;
+                            } // Check for duration parsing success on total/avg filters
+                            else if (['total', 'avg'].includes(parsed.key) && parsed.valueSeconds === null) {
+                                // Error already printed by parseFilterString
+                                process.exitCode = 1;
                             } else {
                                 parsedFilters.push(parsed);
                             }
@@ -79,6 +92,7 @@ export function registerSummaryCommand(program: Command) {
                 });
                 if (process.exitCode === 1) return;
             }
+
 
             if (parsedFilters.length > 0) {
                 console.log(chalk.dim(`Applying ${parsedFilters.length} filter(s)...`));
@@ -95,17 +109,21 @@ export function registerSummaryCommand(program: Command) {
 
                             case 'total':
                             case 'avg': {
-                                // Add null check for filter.valueSeconds
-                                if (filter.valueSeconds === null || filter.valueSeconds === undefined) {
-                                    return false;
+                                // **Explicitly check if valueSeconds is a number BEFORE using it**
+                                if (typeof filter.valueSeconds !== 'number') {
+                                    // This case should ideally not be reached due to prior parsing checks
+                                    console.warn(chalk.yellow(`Skipping ${filter.key} filter due to unexpected missing valueSeconds for filter: ${filter.key}${filter.operator}${filter.value}`));
+                                    return false; // Skip this filter check if valueSeconds isn't a number
                                 }
+
                                 const valueSeconds = filter.key === 'total' ? summary.totalSeconds : summary.avgSeconds;
-                                const filterSeconds = filter.valueSeconds;
+                                const filterSeconds = filter.valueSeconds; // Now TS knows it's a number
 
                                 switch (filter.operator) {
-                                    case '=': return Math.floor(valueSeconds) === filterSeconds;
+                                    case '=': return Math.floor(valueSeconds) === filterSeconds; // Use floor for avg comparison
                                     case '>': return valueSeconds > filterSeconds;
                                     case '>=': return valueSeconds >= filterSeconds;
+                                    // Add other operators here if parseFilterString supports them
                                     default: return false;
                                 }
                             }
@@ -119,7 +137,7 @@ export function registerSummaryCommand(program: Command) {
                                 }
 
                             default:
-                                return true;
+                                return true; // Ignore unknown filter keys (already validated)
                         }
                     });
                 });
@@ -130,16 +148,23 @@ export function registerSummaryCommand(program: Command) {
                 if (parsedFilters.length > 0) {
                     console.log(chalk.yellow('No daily summaries match the specified filters.'));
                 } else {
-                    console.log(chalk.yellow('No sessions recorded yet to summarize.'));
+                    // Check if the original sessions array was empty or only contained active sessions
+                    const hasCompletedSessions = sessions.some(s => s.end_time !== null);
+                     if (!hasCompletedSessions && sessions.length > 0) {
+                        console.log(chalk.yellow('No completed sessions found to summarize. Only active sessions exist.'));
+                     } else if (!hasCompletedSessions) { // Implies sessions.length === 0
+                         console.log(chalk.yellow('No sessions recorded yet to summarize.'));
+                     }
                 }
                 return;
             }
 
+
             const table = new Table({
-                head: [ chalk.blue.bold('SL'), chalk.blue.bold('Date'), chalk.blue.bold('Avg'), chalk.blue.bold('Total'), chalk.blue.bold('Status') ],
+                head: [ chalk.blue.bold('SL'), chalk.blue.bold('Date'), chalk.blue.bold('Avg (hh:mm)'), chalk.blue.bold('Total (hh:mm)'), chalk.blue.bold('Status') ],
+                // Adjusted widths for hh:mm format (shorter than Xh Ym Zs)
                 colWidths: [5, 15, 15, 15, 8],
                 colAligns: ['center', 'center', 'center', 'center', 'center'],
-                // --- Style copied from list.ts ---
                 style: {
                     head: [], border: ['white'], 'padding-left': 1, 'padding-right': 1
                 },
@@ -149,12 +174,12 @@ export function registerSummaryCommand(program: Command) {
                     'left': '║', 'left-mid': '╟', 'mid': '─', 'mid-mid': '┼',
                     'right': '║', 'right-mid': '╢', 'middle': '│'
                 }
-                 // --- End copied style ---
             });
 
             summariesArray.forEach((summary, index) => {
-                const totalStr = formatDuration(summary.totalSeconds);
-                const avgStr = formatDuration(summary.avgSeconds);
+                 // Use formatDurationAsHHMM for total and average duration
+                const totalStr = formatDurationAsHHMM(summary.totalSeconds);
+                const avgStr = formatDurationAsHHMM(summary.avgSeconds);
 
                 table.push([
                     index + 1,
