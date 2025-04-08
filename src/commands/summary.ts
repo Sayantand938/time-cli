@@ -1,3 +1,5 @@
+// src/commands/summary.ts
+
 import { Command, Option } from 'commander';
 import chalk from 'chalk';
 import Table from 'cli-table3';
@@ -137,12 +139,17 @@ export function registerSummaryCommand(program: Command) {
                 head: [ chalk.blue.bold('SL'), chalk.blue.bold('Date'), chalk.blue.bold('Avg'), chalk.blue.bold('Total'), chalk.blue.bold('Status') ],
                 colWidths: [5, 15, 15, 15, 8],
                 colAligns: ['center', 'center', 'center', 'center', 'center'],
-                style: { head: [], border: ['grey'], 'padding-left': 1, 'padding-right': 1 },
-                chars: { 
-                    'top': '═', 'top-mid': '╤', 'bottom': '═', 'bottom-mid': '╧', 
-                    'bottom-left': '╚', 'bottom-right': '╝', 'left': '║', 'left-mid': '╟', 
-                    'mid': '─', 'mid-mid': '┼', 'right': '║', 'right-mid': '╢', 'middle': '│' 
+                // --- Style copied from list.ts ---
+                style: {
+                    head: [], border: ['white'], 'padding-left': 1, 'padding-right': 1
+                },
+                chars: {
+                    'top': '═', 'top-mid': '╤', 'top-left': '╔', 'top-right': '╗',
+                    'bottom': '═', 'bottom-mid': '╧', 'bottom-left': '╚', 'bottom-right': '╝',
+                    'left': '║', 'left-mid': '╟', 'mid': '─', 'mid-mid': '┼',
+                    'right': '║', 'right-mid': '╢', 'middle': '│'
                 }
+                 // --- End copied style ---
             });
 
             summariesArray.forEach((summary, index) => {
