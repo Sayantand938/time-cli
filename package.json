@@ -1,0 +1,61 @@
+{
+  "name": "time-cli",
+  "version": "1.0.0",
+  "description": "A simple command-line tool to track study sessions.",
+  "main": "dist/index.js",
+  "bin": {
+    "time-cli": "./bin/time-cli"
+  },
+  "scripts": {
+    "build": "rimraf dist && tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "keywords": [
+    "cli",
+    "time",
+    "tracker",
+    "terminal"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "type": "commonjs",
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.9.1",
+    "boxen": "^8.0.1",
+    "chalk": "^5.4.1",
+    "cli-table3": "^0.6.5",
+    "commander": "^13.1.0",
+    "dayjs": "^1.11.13",
+    "env-paths": "^3.0.0",
+    "figlet": "^1.8.1",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.24.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/figlet": "^1.7.0",
+    "@types/node": "^22.14.1",
+    "@typescript-eslint/eslint-plugin": "^8.29.1",
+    "@typescript-eslint/parser": "^8.29.1",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.24.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.3",
+    "rimraf": "^6.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.29.1"
+  }
+}
