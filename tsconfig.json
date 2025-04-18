@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "ES2016",
+    "target": "ES2022", // <-- Updated Target
     "module": "CommonJS",
     "outDir": "./dist",
     "rootDir": "./src",
@@ -13,7 +13,7 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "lib": [
-      "ES2016",      
+      "ES2022"
     ]
   },
   "include": [
