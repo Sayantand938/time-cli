@@ -1,16 +1,27 @@
+// src/commands/summary.ts
+
 import { Command } from 'commander';
-import { getDb } from '../lib/db';
+import { getDb, LogEntry } from '../lib/db'; // Import LogEntry
 import {
     formatDuration,
     DAILY_GOAL_SECONDS,
     isValidMonthFormat,
-    isValidYearFormat
+    isValidYearFormat,
+    formatDate // Import formatDate for consistency
 } from '../lib/utils';
 import Table from 'cli-table3';
 import chalk from 'chalk';
+import dayjs from 'dayjs'; // Import dayjs
 
-interface DailySummary {
-    log_date: string;
+// Interface for the raw data fetched from DB
+interface RawLogData {
+    start_time: string;
+    duration: number; // Only fetch completed logs with duration
+}
+
+// Interface for the aggregated data (based on LOCAL date)
+interface AggregatedDailySummary {
+    local_date: string; // YYYY-MM-DD based on local time
     total_duration: number;
 }
 
@@ -24,7 +35,7 @@ const tableChars = {
 export function registerSummaryCommand(program: Command) {
     program
         .command('summary')
-        .description('📊 Shows the total study time for each day and goal status, optionally filtered by month or year.')
+        .description('📊 Shows the total study time for each LOCAL day and goal status, optionally filtered by month or year.') // Updated description
         .option('-m, --month <YYYY-MM>', 'Filter summary by specific month (e.g., 2025-04)')
         .option('-y, --year <YYYY>', 'Filter summary by specific year (e.g., 2025)')
         .action((options) => {
@@ -33,7 +44,7 @@ export function registerSummaryCommand(program: Command) {
                 const filterMonth = options.month as string | undefined;
                 const filterYear = options.year as string | undefined;
 
-                // --- Validation ---
+                // --- Validation (remains the same) ---
                 if (filterMonth && filterYear) {
                     console.error(chalk.red('Error: Cannot use --month and --year options together.'));
                     console.error(chalk.yellow('Please specify only one filter period.'));
@@ -42,8 +53,7 @@ export function registerSummaryCommand(program: Command) {
 
                 let filterType: 'month' | 'year' | null = null;
                 let filterValue: string | null = null;
-                // filterDescription is no longer needed for output header
-                // let filterDescription = "all time";
+                let filterDescription = "all time"; // For potential future use or logging
 
                 if (filterMonth) {
                     if (!isValidMonthFormat(filterMonth)) {
@@ -52,7 +62,7 @@ export function registerSummaryCommand(program: Command) {
                     }
                     filterType = 'month';
                     filterValue = filterMonth;
-                    // filterDescription = `month ${filterValue}`;
+                    filterDescription = `month ${filterValue}`;
                 } else if (filterYear) {
                     if (!isValidYearFormat(filterYear)) {
                          console.error(chalk.red(`Error: Invalid year format "${filterYear}". Please use YYYY.`));
@@ -60,65 +70,90 @@ export function registerSummaryCommand(program: Command) {
                     }
                     filterType = 'year';
                     filterValue = filterYear;
-                    // filterDescription = `year ${filterValue}`;
+                    filterDescription = `year ${filterValue}`;
                 }
 
-                // --- Build SQL Query ---
+                // --- Build SQL Query to fetch RAW data ---
+                // Select only necessary columns for aggregation
+                // Keep the broad WHERE clauses for filtering
                 let sql = `
                     SELECT
-                        DATE(start_time) as log_date,
-                        SUM(duration) as total_duration
+                        start_time,
+                        duration
                     FROM logs
-                    WHERE duration IS NOT NULL
+                    WHERE duration IS NOT NULL -- Only completed sessions
                 `;
                 const params: string[] = [];
 
                 if (filterType === 'month' && filterValue) {
+                    // This filter is approximate (based on UTC month) but helps reduce data fetched
                     sql += ` AND strftime('%Y-%m', start_time) = ?`;
                     params.push(filterValue);
                 } else if (filterType === 'year' && filterValue) {
+                    // This filter is approximate (based on UTC year)
                     sql += ` AND strftime('%Y', start_time) = ?`;
                     params.push(filterValue);
                 }
 
-                sql += ` GROUP BY log_date ORDER BY log_date ASC`;
+                // Order by start_time helps slightly if we process sequentially, but not strictly required for aggregation
+                sql += ` ORDER BY start_time ASC`;
 
-                // --- Execute Query ---
-                const summaryStmt = db.prepare<string[], DailySummary>(sql);
-                const summaries = summaryStmt.all(...params);
+                // --- Execute Query to get raw logs ---
+                const fetchLogsStmt = db.prepare<string[], RawLogData>(sql);
+                const rawLogs = fetchLogsStmt.all(...params);
+
+                // --- Aggregate in TypeScript based on LOCAL Date ---
+                const dailyTotals: Record<string, number> = {}; // Map<LocalDateString, TotalSeconds>
+
+                rawLogs.forEach(log => {
+                    // Determine the LOCAL date for the start_time
+                    const localDate = dayjs(log.start_time).format('YYYY-MM-DD');
+
+                    // Add duration to the correct local date bucket
+                    dailyTotals[localDate] = (dailyTotals[localDate] || 0) + log.duration;
+                });
+
+                // Convert aggregated data into an array suitable for sorting and display
+                const aggregatedSummaries: AggregatedDailySummary[] = Object.entries(dailyTotals)
+                    .map(([date, duration]) => ({
+                        local_date: date,
+                        total_duration: duration,
+                    }))
+                    .sort((a, b) => a.local_date.localeCompare(b.local_date)); // Sort by date string ASC
 
                 // --- Render Table ---
-                if (summaries.length === 0) {
+                if (aggregatedSummaries.length === 0) {
                     console.log();
-                    // Simplified message - no longer mentions specific filter period
                     console.log('No completed sessions found matching the criteria.');
                     console.log();
                     return;
                 }
 
                 const table = new Table({
-                    head: ['SL', 'Date', 'Total Time', 'Status'],
+                    head: ['SL', 'Date (Local)', 'Total Time', 'Status'], // Updated header
                     colWidths: [5, 15, 15, 8],
                     colAligns: ['center', 'center', 'center', 'center'],
                     chars: tableChars,
                     style: { head: ['cyan'], border: ['white'] }
                 });
 
-                summaries.forEach((summary, index) => {
+                aggregatedSummaries.forEach((summary, index) => {
                     const goalReached = summary.total_duration >= DAILY_GOAL_SECONDS;
                     const statusEmoji = goalReached ? '✅' : '❌';
 
                     table.push([
                         (index + 1).toString(),
-                        summary.log_date,
+                        summary.local_date, // Display the calculated local date
                         formatDuration(summary.total_duration),
                         statusEmoji
                     ]);
                 });
 
                 console.log();
-                // Remove the contextual header line
-                // console.log(chalk.blue(`Summary for: ${filterDescription}`));
+                // Optional: Add a title indicating the filter applied, if any
+                // if (filterValue) {
+                //     console.log(chalk.blue(`Summary filtered for: ${filterDescription}`));
+                // }
                 console.log(table.toString());
                 console.log();
 

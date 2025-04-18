@@ -1,180 +1,4 @@
-// import { Command } from 'commander';
-// import chalk from 'chalk';
-// import boxen, { Options as BoxenOptions } from 'boxen';
-// import dayjs from 'dayjs';
-// import { getDb } from '../lib/db';
-// import {
-//     formatDuration,
-//     DAILY_GOAL_SECONDS,
-//     formatDate
-// } from '../lib/utils';
-
-// // Type for the daily summary query result
-// interface DailySummary {
-//     log_date: string;
-//     total_duration: number;
-// }
-
-// // Type for the overall stats query result
-// interface OverallStats {
-//     grand_total_duration: number | null;
-//     total_sessions: number;
-//     first_entry_date: string | null;
-//     last_entry_date: string | null;
-// }
-
-
-// export function registerReportCommand(program: Command) {
-//     program
-//         .command('report')
-//         .description('📈 Shows overall statistics including goal streaks.')
-//         .action(() => {
-//             try {
-//                 const db = getDb();
-
-//                 // --- Query 1: Get daily summaries (MUST be ordered by date for streaks) ---
-//                 const dailySummarySql = `
-//                     SELECT
-//                         DATE(start_time) as log_date,
-//                         SUM(duration) as total_duration
-//                     FROM logs
-//                     WHERE duration IS NOT NULL
-//                     GROUP BY log_date
-//                     ORDER BY log_date ASC
-//                 `;
-//                 const dailySummaryStmt = db.prepare<[], DailySummary>(dailySummarySql); // Pass SQL here
-//                 const dailySummaries = dailySummaryStmt.all();
-
-//                 // --- Query 2: Get overall totals and dates ---
-//                 // Define the SQL string first
-//                 const overallStatsSql = `
-//                     SELECT
-//                         SUM(duration) as grand_total_duration,
-//                         COUNT(id) as total_sessions,
-//                         MIN(start_time) as first_entry_date,
-//                         MAX(start_time) as last_entry_date
-//                     FROM logs
-//                     WHERE duration IS NOT NULL
-//                 `;
-//                 // Prepare the statement using the defined SQL string
-//                 const overallStatsStmt = db.prepare<[], OverallStats>(overallStatsSql);
-//                 // Now get the results (should not require arguments)
-//                 const overallStats = overallStatsStmt.get(); // This should now be correct
-
-
-//                 // --- Calculations (Streak logic and others remain the same) ---
-//                 const totalDaysWithRecords = dailySummaries.length;
-//                 let daysMeetingGoal = 0;
-//                 let currentStreak = 0;
-//                 let longestStreak = 0;
-//                 let tempCurrentStreak = 0;
-
-//                 if (totalDaysWithRecords > 0 && dailySummaries) {
-//                     dailySummaries.forEach(summary => {
-//                         const goalMet = summary.total_duration >= DAILY_GOAL_SECONDS;
-//                         if (goalMet) {
-//                             daysMeetingGoal++;
-//                             tempCurrentStreak++;
-//                         } else {
-//                             longestStreak = Math.max(longestStreak, tempCurrentStreak);
-//                             tempCurrentStreak = 0;
-//                         }
-//                     });
-//                     longestStreak = Math.max(longestStreak, tempCurrentStreak);
-
-//                     const lastLogEntry = dailySummaries[dailySummaries.length - 1];
-//                     const lastLogDate = lastLogEntry.log_date;
-//                     const goalMetOnLastDay = lastLogEntry.total_duration >= DAILY_GOAL_SECONDS;
-//                     const today = dayjs().format('YYYY-MM-DD');
-//                     const yesterday = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
-
-//                     if (goalMetOnLastDay && (lastLogDate === today || lastLogDate === yesterday)) {
-//                          currentStreak = tempCurrentStreak;
-//                     } else {
-//                          currentStreak = 0;
-//                     }
-//                }
-
-//                 const percentageMeetingGoal = totalDaysWithRecords > 0
-//                     ? (daysMeetingGoal / totalDaysWithRecords) * 100
-//                     : 0;
-
-//                 const grandTotalDuration = overallStats?.grand_total_duration ?? 0;
-//                 const totalSessions = overallStats?.total_sessions ?? 0;
-//                 const averageSessionDuration = totalSessions > 0 ? grandTotalDuration / totalSessions : 0;
-//                 const averageDailyDuration = totalDaysWithRecords > 0 ? grandTotalDuration / totalDaysWithRecords : 0;
-//                 const firstEntry = overallStats?.first_entry_date ? formatDate(overallStats.first_entry_date) : 'N/A';
-//                 const lastEntry = overallStats?.last_entry_date ? formatDate(overallStats.last_entry_date) : 'N/A';
-
-
-//                 // --- Format Output for Boxen (remains the same) ---
-//                 const goalLabel = "Days Goal Met:";
-//                 const totalDaysLabel = "Total Active Days:";
-//                 const goalPercentLabel = "Goal Success Rate:";
-//                 const currentStreakLabel = "Current Goal Streak:";
-//                 const longestStreakLabel = "Longest Goal Streak:";
-//                 const totalTimeLabel = "Total Time Logged:";
-//                 const totalSessionsLabel = "Total Sessions:";
-//                 const avgSessionLabel = "Avg. Session Time:";
-//                 const avgDailyLabel = "Avg. Daily Time:";
-//                 const firstEntryLabel = "First Entry:";
-//                 const lastEntryLabel = "Last Entry:";
-
-//                  const maxLength = Math.max(
-//                     goalLabel.length, totalDaysLabel.length, goalPercentLabel.length,
-//                     currentStreakLabel.length, longestStreakLabel.length,
-//                     totalTimeLabel.length, totalSessionsLabel.length,
-//                     avgSessionLabel.length, avgDailyLabel.length,
-//                     firstEntryLabel.length, lastEntryLabel.length
-//                 );
-
-//                 const lines = [
-//                     chalk.cyan.bold('--- Goal Performance ---'),
-//                     `${goalLabel.padEnd(maxLength)} : ${chalk.green(daysMeetingGoal)}`,
-//                     `${totalDaysLabel.padEnd(maxLength)} : ${chalk.yellow(totalDaysWithRecords)}`,
-//                     `${goalPercentLabel.padEnd(maxLength)} : ${chalk.yellowBright(percentageMeetingGoal.toFixed(1))}%`,
-//                     '',
-//                     chalk.cyan.bold('--- Streaks (Days) ---'),
-//                     `${currentStreakLabel.padEnd(maxLength)} : ${chalk.blueBright(currentStreak)}`,
-//                     `${longestStreakLabel.padEnd(maxLength)} : ${chalk.blueBright(longestStreak)}`,
-//                     '',
-//                     chalk.cyan.bold('--- Overall Stats ---'),
-//                     `${totalTimeLabel.padEnd(maxLength)} : ${chalk.magenta(formatDuration(grandTotalDuration))}`,
-//                     `${totalSessionsLabel.padEnd(maxLength)} : ${chalk.magenta(totalSessions)}`,
-//                     `${avgSessionLabel.padEnd(maxLength)} : ${chalk.blue(formatDuration(averageSessionDuration))}`,
-//                     `${avgDailyLabel.padEnd(maxLength)} : ${chalk.blue(formatDuration(averageDailyDuration))}`,
-//                     '',
-//                      chalk.cyan.bold('--- Data Range ---'),
-//                      `${firstEntryLabel.padEnd(maxLength)} : ${chalk.gray(firstEntry)}`,
-//                      `${lastEntryLabel.padEnd(maxLength)} : ${chalk.gray(lastEntry)}`
-//                 ];
-
-
-//                 // --- Display Report (remains the same) ---
-//                  if (totalDaysWithRecords === 0 && totalSessions === 0) {
-//                     console.log();
-//                     console.log(chalk.yellow('No study sessions logged yet. Nothing to report.'));
-//                     console.log();
-//                     return;
-//                 }
-
-//                 const boxenOptions: BoxenOptions = {
-//                     padding: 1,
-//                     margin: 1,
-//                     borderStyle: 'double',
-//                     borderColor: 'cyan',
-//                     title: 'Study Time Report',
-//                     titleAlignment: 'center'
-//                 };
-
-//                 console.log(boxen(lines.join('\n'), boxenOptions));
-
-//             } catch (error) {
-//                 console.error(chalk.red('Failed to generate report:'), error);
-//                 process.exit(1);
-//             }
-//         });
-// }
+// src/commands/report.ts
 
 import { Command } from 'commander';
 import chalk from 'chalk';
@@ -184,80 +8,89 @@ import { getDb } from '../lib/db';
 import {
     formatDuration,
     DAILY_GOAL_SECONDS,
-    formatDate
+    formatDate // Use formatDate for consistency
 } from '../lib/utils';
 
-// --- Interfaces for Required Query Results ---
+// --- Interfaces ---
 
-interface DailySummary {
-    log_date: string;
-    goal_met: number; // 1 if goal met, 0 otherwise
-    // total_duration is implicitly calculated by goal_met check but not explicitly needed here
+// For raw data fetched from DB
+interface RawReportLog {
+    start_time: string;
+    duration: number;
 }
 
-interface OverallDateRange {
-    first_entry_date: string | null;
-    last_entry_date: string | null;
+// For aggregated data per LOCAL day
+interface AggregatedReportDay {
+    local_date: string; // YYYY-MM-DD
+    total_duration: number;
+    goal_met: boolean;
 }
 
 // Define the allowed Chalk color keys used in this specific report's addLine function
-type FocusedReportChalkColor = 'yellowBright' | 'gray' | 'blueBright';
+type FocusedReportChalkColor = 'yellowBright' | 'gray' | 'blueBright' | 'green' | 'yellow';
+
 
 // --- Main Command Registration ---
 
 export function registerReportCommand(program: Command) {
     program
         .command('report')
-        .description('📈 Shows focused statistics on goals, streaks, and consistency.')
+        .description('📈 Shows focused statistics on goals, streaks, and consistency (based on local time).') // Updated description
         .action(() => {
             try {
                 const db = getDb();
 
-                // --- Query 1: Daily Summaries (ordered for streaks, check goal status) ---
-                // We only need the date and whether the goal was met for these stats
-                const dailySummarySql = `
+                // --- Query 1: Fetch all necessary raw log data ---
+                // No date filtering here, report covers all time
+                const rawLogsSql = `
                     SELECT
-                        DATE(start_time) as log_date,
-                        CASE WHEN SUM(duration) >= ? THEN 1 ELSE 0 END as goal_met
+                        start_time,
+                        duration
                     FROM logs
                     WHERE duration IS NOT NULL
-                    GROUP BY log_date
-                    ORDER BY log_date ASC
+                    ORDER BY start_time ASC
                 `;
-                const dailySummaryStmt = db.prepare<[number], DailySummary>(dailySummarySql);
-                const dailySummaries = dailySummaryStmt.all(DAILY_GOAL_SECONDS);
+                const fetchLogsStmt = db.prepare<[], RawReportLog>(rawLogsSql);
+                const rawLogs = fetchLogsStmt.all();
 
-                // --- Query 2: Get Overall Date Range ---
-                const dateRangeSql = `
-                    SELECT
-                        MIN(start_time) as first_entry_date,
-                        MAX(start_time) as last_entry_date
-                    FROM logs
-                    WHERE duration IS NOT NULL
-                `;
-                const dateRangeStmt = db.prepare<[], OverallDateRange>(dateRangeSql);
-                const dateRange = dateRangeStmt.get();
-
-
-                // --- Basic Checks & Initial Calculations ---
-                const totalDaysWithRecords = dailySummaries.length; // Total days *with logs*
-
-                if (totalDaysWithRecords === 0) {
+                if (rawLogs.length === 0) {
                     console.log(chalk.yellow('\n🟡 No study sessions logged yet. Nothing to report.\n'));
                     return;
                 }
 
-                const firstEntry = dateRange?.first_entry_date ? formatDate(dateRange.first_entry_date) : 'N/A';
-                const lastEntry = dateRange?.last_entry_date ? formatDate(dateRange.last_entry_date) : 'N/A';
+                // --- Aggregate Data per LOCAL Day ---
+                const dailyAggregates: Record<string, { total_duration: number }> = {};
 
-                // --- Goal & Streak Calculation ---
+                rawLogs.forEach(log => {
+                    const localDate = dayjs(log.start_time).format('YYYY-MM-DD');
+                    if (!dailyAggregates[localDate]) {
+                        dailyAggregates[localDate] = { total_duration: 0 };
+                    }
+                    dailyAggregates[localDate].total_duration += log.duration;
+                });
+
+                // Convert to sorted array and calculate goal status
+                const sortedDays: AggregatedReportDay[] = Object.entries(dailyAggregates)
+                    .map(([date, data]) => ({
+                        local_date: date,
+                        total_duration: data.total_duration,
+                        goal_met: data.total_duration >= DAILY_GOAL_SECONDS,
+                    }))
+                    .sort((a, b) => a.local_date.localeCompare(b.local_date)); // Sort by local date ASC
+
+
+                // --- Perform Calculations based on Local Day Aggregates ---
+                const totalDaysWithRecords = sortedDays.length;
+                const firstEntry = sortedDays[0].local_date; // Already formatted YYYY-MM-DD
+                const lastEntry = sortedDays[sortedDays.length - 1].local_date; // Already formatted YYYY-MM-DD
+
                 let daysMeetingGoal = 0;
                 let currentStreak = 0;
                 let longestStreak = 0;
                 let tempCurrentStreak = 0;
 
-                dailySummaries.forEach(summary => {
-                    if (summary.goal_met) {
+                sortedDays.forEach(day => {
+                    if (day.goal_met) {
                         daysMeetingGoal++;
                         tempCurrentStreak++;
                     } else {
@@ -265,62 +98,69 @@ export function registerReportCommand(program: Command) {
                         tempCurrentStreak = 0;
                     }
                 });
-                longestStreak = Math.max(longestStreak, tempCurrentStreak); // Check after loop ends
+                longestStreak = Math.max(longestStreak, tempCurrentStreak); // Final check
 
-                // Determine current streak accurately
-                const lastLogEntry = dailySummaries[dailySummaries.length - 1];
-                const lastLogDate = dayjs(lastLogEntry.log_date);
+                // Determine current streak accurately based on LOCAL dates
+                const lastLogDay = sortedDays[sortedDays.length - 1];
+                const lastLogDateObj = dayjs(lastLogDay.local_date); // Already local date
                 const today = dayjs().startOf('day');
                 const yesterday = dayjs().subtract(1, 'day').startOf('day');
 
-                if (lastLogEntry.goal_met && (lastLogDate.isSame(today) || lastLogDate.isSame(yesterday))) {
-                    currentStreak = tempCurrentStreak;
-                } else {
+                // Check if the last recorded LOCAL day was today or yesterday AND the goal was met
+                if (lastLogDay.goal_met && (lastLogDateObj.isSame(today) || lastLogDateObj.isSame(yesterday))) {
+                    // To correctly calculate the current streak, we need to check continuity backwards from the last valid day
                     currentStreak = 0;
+                    for (let i = sortedDays.length - 1; i >= 0; i--) {
+                        const day = sortedDays[i];
+                        const dayDateObj = dayjs(day.local_date);
+                        // Check if it's contiguous with the previous day in the streak OR the start of the streak
+                        const expectedPreviousDate = dayjs(sortedDays[i + 1]?.local_date).subtract(1, 'day');
+                         if (day.goal_met && (i === sortedDays.length - 1 || dayDateObj.isSame(expectedPreviousDate))) {
+                             currentStreak++;
+                         } else {
+                             break; // Streak broken
+                         }
+                    }
+                } else {
+                    currentStreak = 0; // Streak is not current if last day goal wasn't met or it wasn't today/yesterday
                 }
+
 
                 // Goal Percentage
                 const percentageMeetingGoal = totalDaysWithRecords > 0
                     ? (daysMeetingGoal / totalDaysWithRecords) * 100
                     : 0;
 
-                // --- Consistency Calculation ---
+                // --- Consistency Calculation (based on local date range) ---
                 let consistencyText = 'N/A';
                 let totalDaysInRange = 0;
-                if (dateRange?.first_entry_date && dateRange?.last_entry_date) {
-                    const firstD = dayjs(dateRange.first_entry_date).startOf('day');
-                    const lastD = dayjs(dateRange.last_entry_date).startOf('day');
-                    totalDaysInRange = lastD.diff(firstD, 'day') + 1; // Inclusive range
-                    if (totalDaysInRange > 0) {
-                         // Format as X / Y days
-                         consistencyText = `${totalDaysWithRecords} / ${totalDaysInRange} days`;
-                    }
+                const firstD = dayjs(firstEntry); // Already local
+                const lastD = dayjs(lastEntry);   // Already local
+                totalDaysInRange = lastD.diff(firstD, 'day') + 1; // Inclusive range
+                if (totalDaysInRange > 0) {
+                    consistencyText = `${totalDaysWithRecords} / ${totalDaysInRange} days`;
                 }
 
-
-                // --- Format Output ---
+                // --- Format Output (using addLine function) ---
                 const lines: string[] = [];
                 const sectionSpacer = ''; // Blank line between sections
 
-                // Function to add aligned key-value pairs
                 const addLine = (label: string, value: string | number, valueColor: FocusedReportChalkColor = 'yellowBright') => {
-                     const maxLabelLength = 20; // Adjusted max length
-                     // Value is typically string or number for formatting here
-                     const formattedValue = typeof value === 'number'
-                        ? (value % 1 === 0 ? value.toString() : value.toFixed(1)) // Handle percentages/counts
-                        : value;
-                     lines.push(`${label.padEnd(maxLabelLength)} : ${chalk[valueColor](formattedValue)}`);
-                 };
+                    const maxLabelLength = 20;
+                    const formattedValue = typeof value === 'number'
+                       ? (value % 1 === 0 ? value.toString() : value.toFixed(1))
+                       : value;
+                    lines.push(`${label.padEnd(maxLabelLength)} : ${chalk[valueColor](formattedValue)}`);
+                };
 
                 // --- Build Report Sections ---
-
                 lines.push(chalk.cyan.bold('🗓️ Tracking Period'));
-                addLine('First Log Entry', firstEntry, 'gray');
-                addLine('Last Log Entry', lastEntry, 'gray');
+                addLine('First Log (Local)', firstEntry, 'gray');
+                addLine('Last Log (Local)', lastEntry, 'gray');
                 lines.push(sectionSpacer);
 
                 lines.push(chalk.cyan.bold('🎯 Daily Goal Pursuit'));
-                addLine('Goal Success Rate', `${percentageMeetingGoal.toFixed(1)}%`);
+                addLine('Goal Success Rate', `${percentageMeetingGoal}%`); // Removed .toFixed(1) if percentage is calculated precisely
                 addLine('Days Goal Met', `${daysMeetingGoal} / ${totalDaysWithRecords} (Active)`);
                 lines.push(sectionSpacer);
 
@@ -339,7 +179,7 @@ export function registerReportCommand(program: Command) {
                     margin: 1,
                     borderStyle: 'round',
                     borderColor: 'cyan',
-                    title: '📊 Study Habits Report 📊',
+                    title: '📊 Study Habits Report (Local Time) 📊', // Updated title
                     titleAlignment: 'center'
                 };
 

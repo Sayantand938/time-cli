@@ -1,3 +1,5 @@
+// src/commands/eta.ts
+
 import { Command } from 'commander';
 import boxen, { Options as BoxenOptions } from 'boxen';
 import chalk from 'chalk';
@@ -6,31 +8,44 @@ import { getDb } from '../lib/db';
 import {
     DAILY_GOAL_SECONDS,
     formatDuration,
-    // Remove getCurrentISODate from imports
 } from '../lib/utils';
+
+// Interface for the raw data needed
+interface LogDuration {
+    duration: number;
+}
 
 export function registerEtaCommand(program: Command) {
     program
         .command('eta')
-        .description('🎯 Calculates remaining time to reach the daily goal (8 hours).') // Added emoji
+        .description('🎯 Calculates remaining time to reach the daily goal (based on local time).') // Updated description
         .action(() => {
             try {
                 const db = getDb();
-                // Get today's date directly using dayjs
-                const today = dayjs().format('YYYY-MM-DD');
 
-                const sumDurationStmt = db.prepare<[string], { total: number | null }>(`
+                // --- Calculate UTC boundaries for the current LOCAL day ---
+                const nowLocal = dayjs();
+                const startOfTodayLocal = nowLocal.startOf('day');
+                const startOfTomorrowLocal = startOfTodayLocal.add(1, 'day');
+
+                const startUTC = startOfTodayLocal.toISOString();
+                const endUTC = startOfTomorrowLocal.toISOString();
+
+                // --- Query logs that started within the local day's UTC boundaries ---
+                const sumDurationStmt = db.prepare<[string, string], { total: number | null }>(`
                     SELECT SUM(duration) as total
                      FROM logs
-                     WHERE DATE(start_time) = ? AND duration IS NOT NULL
+                     WHERE start_time >= ? AND start_time < ?
+                       AND duration IS NOT NULL
                 `);
 
-                const result = sumDurationStmt.get(today); // Use the generated date
+                const result = sumDurationStmt.get(startUTC, endUTC); // Use the calculated UTC boundaries
 
                 const totalDurationToday = result?.total ?? 0;
                 const remainingSeconds = Math.max(0, DAILY_GOAL_SECONDS - totalDurationToday);
                 const goalAchieved = remainingSeconds <= 0;
 
+                // --- Formatting and Display (remains the same) ---
                 const goalStr = formatDuration(DAILY_GOAL_SECONDS);
                 const totalStr = formatDuration(totalDurationToday);
                 const remainingStr = formatDuration(remainingSeconds);
@@ -57,7 +72,7 @@ export function registerEtaCommand(program: Command) {
                     margin: 1,
                     borderStyle: 'round',
                     borderColor: goalAchieved ? 'green' : 'yellow',
-                    title: 'Daily Progress',
+                    title: `Daily Progress (${startOfTodayLocal.format('YYYY-MM-DD')})`, // Add date to title
                     titleAlignment: 'center',
                 };
 

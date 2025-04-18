@@ -1,6 +1,11 @@
+// src/commands/list.ts
+
 import { Command } from 'commander';
 import Table from 'cli-table3';
 import dayjs from 'dayjs'; // Ensure dayjs is imported
+// Make sure utc plugin is available if needed, but toISOString handles UTC conversion
+// import utc from 'dayjs/plugin/utc';
+// dayjs.extend(utc);
 import chalk from 'chalk';
 import { getDb, LogEntry } from '../lib/db';
 import {
@@ -42,7 +47,7 @@ export function registerListCommand(program: Command) {
                     FROM logs
                     WHERE end_time IS NOT NULL -- Always list completed sessions
                 `;
-                const params: string[] = [];
+                const params: string[] = []; // Only string parameters for ISO timestamps
                 let listTitle = "All Time"; // Default title for --all
 
                 if (showAll) {
@@ -52,22 +57,23 @@ export function registerListCommand(program: Command) {
                     }
                     // No additional WHERE clause needed for date filtering
                 } else {
-                    // --- Determine Target Date (Only if --all is NOT specified) ---
-                    let targetDate: string;
+                    // --- Determine Target LOCAL Day Object (Only if --all is NOT specified) ---
+                    let targetDayLocal: dayjs.Dayjs;
+                    let displayKeyword = ''; // To store 'Today', 'Yesterday', etc.
 
                     if (!inputDate || inputDate.toLowerCase() === 'today') {
-                        targetDate = dayjs().format('YYYY-MM-DD');
-                        listTitle = `Today (${targetDate})`;
+                        targetDayLocal = dayjs().startOf('day');
+                        displayKeyword = 'Today';
                     } else if (inputDate.toLowerCase() === 'yesterday') {
-                        targetDate = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
-                        listTitle = `Yesterday (${targetDate})`;
+                        targetDayLocal = dayjs().subtract(1, 'day').startOf('day');
+                        displayKeyword = 'Yesterday';
                     } else if (inputDate.toLowerCase() === 'tomorrow') {
-                        // Although listing future logs might be rare, handle it consistently
-                        targetDate = dayjs().add(1, 'day').format('YYYY-MM-DD');
-                        listTitle = `Tomorrow (${targetDate})`;
+                        targetDayLocal = dayjs().add(1, 'day').startOf('day');
+                        displayKeyword = 'Tomorrow';
                     } else if (isValidDate(inputDate)) {
-                        targetDate = inputDate;
-                        listTitle = targetDate; // Use the specific date as the title
+                        // Use startOf('day') to ensure we capture the full 24 hours regardless of input time part (if any was accidentally included)
+                        targetDayLocal = dayjs(inputDate).startOf('day');
+                        // No specific keyword for custom dates
                     } else {
                         // Invalid date format/keyword
                         console.error(chalk.red(`Error: Invalid date format or keyword "${inputDate}".`));
@@ -75,9 +81,19 @@ export function registerListCommand(program: Command) {
                         process.exit(1);
                     }
 
-                    // Append date filter to SQL query
-                    sql += ` AND DATE(start_time) = ?`;
-                    params.push(targetDate);
+                    // --- Calculate UTC Boundaries for the Local Day ---
+                    const startUTC = targetDayLocal.toISOString(); // Start of the local day in UTC
+                    const endUTC = targetDayLocal.add(1, 'day').toISOString(); // Start of the *next* local day in UTC
+
+                    // Append date range filter to SQL query
+                    // We want entries where start_time is ON or AFTER startUTC
+                    // AND strictly BEFORE endUTC
+                    sql += ` AND start_time >= ? AND start_time < ?`;
+                    params.push(startUTC, endUTC);
+
+                    // Set the title based on the local date
+                    const formattedDate = targetDayLocal.format('YYYY-MM-DD');
+                    listTitle = displayKeyword ? `${displayKeyword} (${formattedDate})` : formattedDate;
                 }
 
                 // --- Add Ordering (applies to both all and filtered) ---
@@ -85,16 +101,12 @@ export function registerListCommand(program: Command) {
 
                 // --- Execute Query ---
                 const selectLogsStmt = db.prepare<string[], LogQueryResult>(sql);
-                const logs = selectLogsStmt.all(...params); // Pass parameters (empty if --all)
+                const logs = selectLogsStmt.all(...params); // Pass parameters
 
                 // --- Render Table ---
                 if (logs.length === 0) {
                     console.log();
-                    if (showAll) {
-                        console.log('No completed sessions found in the database.');
-                    } else {
-                        console.log(`No completed sessions found for ${listTitle}.`);
-                    }
+                    console.log(`No completed sessions found for ${listTitle}.`);
                     console.log();
                     return;
                 }
@@ -119,8 +131,8 @@ export function registerListCommand(program: Command) {
 
                     table.push([
                         chalk.gray(shortenUUID(log.id)),
-                        formatDate(log.start_time),
-                        formatTime(log.start_time),
+                        formatDate(log.start_time), // Display uses local date correctly
+                        formatTime(log.start_time), // Display uses local time correctly
                         endTimeFormatted,
                         durationFormatted
                     ]);
