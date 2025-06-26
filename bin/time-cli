@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+
+(async () => {
+  try {
+    await import('../dist/cli.js');
+  } catch (err) {
+    console.error('CLI failed to start:', err?.message || err);
+    process.exit(1);
+  }
+})();
