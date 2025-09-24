@@ -1,0 +1,20 @@
+[project]
+name = "time-cli-pkg"
+version = "0.1.0"
+description = "A simple CLI for tracking your time."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Your Name", email = "your@email.com" }]
+dependencies = [
+    "typer",
+    "rich",
+]
+
+[project.scripts]
+time-cli = "time_cli_pkg.cli:cli"
+
+# This section is crucial for Pylance and other tools
+[tool.setuptools]
+packages = ["time_cli_pkg"]
+package-dir = {"" = "src"}
