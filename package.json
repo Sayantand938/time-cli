@@ -1,0 +1,33 @@
+{
+  "name": "time-cli",
+  "version": "1.0.0",
+  "description": "A daily productivity tracker CLI tool.",
+  "main": "dist/bin/time-cli.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/bin/time-cli.js",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "bin": {
+    "time-cli": "dist/bin/time-cli.js"
+  },
+  "keywords": [
+    "cli",
+    "productivity",
+    "time-tracker"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "cli-table3": "^0.6.5",
+    "commander": "^14.0.2",
+    "dayjs": "^1.11.18"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.10.3",
+    "typescript": "^5.3.2"
+  }
+}
